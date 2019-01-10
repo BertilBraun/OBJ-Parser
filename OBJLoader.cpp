@@ -1,19 +1,44 @@
 #include "OBJLoader.h"
 
+#include <fstream>
+#include <algorithm>
+
 static inline uint FindNextChar(uint start, const char* str, uint length, char token);
 static inline float ParseOBJFloatValue(const String& token, uint start, uint end);
 static inline uint ParseOBJIndexValue(const String& token);
 
+void IndexedModel::CalcNormals()
+{
+	for(unsigned int i = 0; i < indices.size(); i += 3)
+	{
+		int i0 = indices[i];
+		int i1 = indices[i + 1];
+		int i2 = indices[i + 2];
+
+		vec3 v1 = vertices[i1] - vertices[i0];
+		vec3 v2 = vertices[i2] - vertices[i0];
+		
+		vec3 normal = normalize(cross(v1, v2));
+			
+		normals[i0] += normal;
+		normals[i1] += normal;
+		normals[i2] += normal;
+	}
+	
+	for(unsigned int i = 0; i < vertices.size(); i++)
+		normals[i] = normalize(normals[i]);
+}
+
 OBJLoader::OBJLoader(const String& fileName)
 {
-	std::ifstream file((ProgCon::MODELPATH + fileName).c_str());
+	std::ifstream file(fileName.c_str());
 
 	if (!file.is_open() || fileName.substr(fileName.length(), fileName.length() - 4) == ".obj") {
-		printf("UNABLE TO LOAD MESH : " + fileName);
+		printf("UNABLE TO LOAD MESH : %s", fileName.c_str());
 		return;
 	}
 
-	printf("LOADING MESH : " + fileName);
+	printf("LOADING MESH : %s", fileName.c_str());
 
 	String line;
 	folder = String::folder(fileName);
@@ -86,8 +111,8 @@ IndexedModel OBJLoader::ToIndexedModel()
 
 	std::sort(indexLookup.begin(), indexLookup.end(), [](const OBJIndex* a, const OBJIndex* b) { return a->vertexIndex < b->vertexIndex; });
 
-	Map<OBJIndex, uint> normalModelIndexMap;
-	Map<uint, uint> indexMap;
+	std::map<OBJIndex, uint> normalModelIndexMap;
+	std::map<uint, uint> indexMap;
 
 	for (uint i = 0; i < numIndices; i++)
 	{
@@ -101,7 +126,7 @@ IndexedModel OBJLoader::ToIndexedModel()
 		uint resultModelIndex;
 
 		//Create model to properly generate normals on
-		Map<OBJIndex, uint>::iterator it = normalModelIndexMap.find(*currentIndex);
+		std::map<OBJIndex, uint>::iterator it = normalModelIndexMap.find(*currentIndex);
 		if (it == normalModelIndexMap.end())
 		{
 			normalModelIndex = (uint)normalModel.vertices.size();
@@ -147,25 +172,25 @@ IndexedModel OBJLoader::ToIndexedModel()
 	return result;
 }
 
-Map<String, LoadMaterial> OBJLoader::LoadMaterials(const String & folder, const String & path)
+std::map<String, Material> OBJLoader::LoadMaterials(const String & folder, const String & path)
 {
-	Map<String, LoadMaterial> materials;
+	std::map<String, Material> materials;
 
 	if (path.substr(path.size() - 4, path.size()) != ".mtl")
 		return materials;
 
-	std::ifstream file(ProgCon::MODELPATH + folder + path);
+	std::ifstream file(folder + path);
 
 	if (!file.is_open()) {
-		printf("FAILED TO LOAD MATERIAL : " + path + " IN FOLDER : " + folder);
+		printf("UNABLE TO LOAD MATERIAL : %s IN FOLDER : ", path.c_str(), folder.c_str());
 		return materials;
 	}
 
-	ASSET::LoadMaterial tempMaterial;
+	Material tempMaterial;
 	bool listening = false;
 
 	String curline, firstToken, tailToken;
-	while (std::getline(file, curline))
+	while (getline(file, curline))
 	{
 		firstToken = String::firstToken(curline);
 		tailToken = String::tail(curline);
